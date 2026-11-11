@@ -461,8 +461,9 @@ function viewAdd() {
   else if (S.searchRes && !S.searchRes.length) res = `<div class="empty">Sonuç bulunamadı. İngilizce adını ya da IMDb linkini dene.</div>`;
   else if (S.searchRes) res = S.searchRes.map(r => {
     const have = showMap[r.id];
-    const btn = have ? (have.aktif ? `<button class="btn ghost" data-open="${r.id}">Takipte ✓</button>` : `<button class="btn" data-add="${r.id}">Geri al</button>`)
-      : S.adding[r.id] ? `<button class="btn" disabled>Ekleniyor…</button>` : `<button class="btn pri" data-add="${r.id}">Ekle</button>`;
+    const btn = S.adding[r.id] ? `<button class="btn" disabled>Ekleniyor…</button>`
+      : have ? (have.aktif ? `<button class="btn ghost" data-open="${r.id}">Takipte ✓</button>` : `<button class="btn" data-add="${r.id}">Geri al</button>`)
+      : `<button class="btn pri" data-add="${r.id}">Ekle</button>`;
     return `<div class="card res">${poster({ poster: r.poster, ad: r.ad })}
       <div class="grow"><div class="t1">${esc(r.ad)} ${r.yil ? `<span style="color:var(--dim);font-weight:500">(${r.yil})</span>` : ''}</div>
         <div class="t2">${esc([r.kanal, STATUS[r.durum] || r.durum].filter(Boolean).join(' · '))}</div>
@@ -511,6 +512,7 @@ function renderDetail() {
       <button class="btn" data-active="${s.id}" data-val="${s.aktif ? 0 : 1}">${s.aktif ? 'Arşivle' : 'Takibe geri al'}</button>
       <button class="btn danger" data-del="${s.id}">Sil</button>
     </div>
+    ${!l.length && S.adding[s.id] ? '<div class="loading">Bölümler yükleniyor…</div>' : ''}
     ${Object.keys(seasons).map(Number).sort((a, b) => a - b).map(se => {
       const eps = seasons[se];
       const aired = eps.filter(isAired);
@@ -562,11 +564,24 @@ async function setWatched(ids, val, undoable) {
   }
 }
 async function addShow(id) {
-  S.adding[id] = true; render();
+  id = Number(id);
+  S.adding[id] = true;
+  // İyimser ekleme: arama sonucundaki bilgilerle dizi hemen listede görünsün, bölümler sunucudan gelince dolsun
+  const r = (S.searchRes || []).find(x => x.id === id);
+  const placeholder = r && !showMap[id];
+  if (placeholder) {
+    S.data.shows.push({ id, ad: r.ad, imdb: r.imdb, durum: r.durum, kanal: r.kanal, yil: r.yil, poster: r.poster, url: '', aktif: true, eklenme: '', senkron: '' });
+    index();
+  }
+  render();
+  toast('Ekleniyor… bölümler birkaç saniyede gelecek');
   try {
-    setData(await call('addShow', Number(id)));
+    setData(await call('addShow', id));
     toast('Eklendi! Kaldığın yeri işaretle.', 'Aç', () => openDetail(id));
-  } catch (err) { toast('Eklenemedi: ' + (err.message || err), null, null, true); }
+  } catch (err) {
+    if (placeholder) { S.data.shows = S.data.shows.filter(s => !(s.id === id && !s.senkron)); index(); }
+    toast('Eklenemedi: ' + (err.message || err), null, null, true);
+  }
   delete S.adding[id]; render();
 }
 async function doSearch(q) {
